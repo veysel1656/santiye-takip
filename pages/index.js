@@ -9,7 +9,7 @@ const Chart = dynamic(() => import("react-apexcharts"), { ssr: false });
 
 export default function Home() {
   const [session, setSession] = useState(null);
-  const [userRole, setUserRole] = useState("chief");
+  const [userRole, setUserRole] = useState("office");
   const [selectedPier, setSelectedPier] = useState("P1");
 
   const [email, setEmail] = useState("");
@@ -67,53 +67,21 @@ export default function Home() {
   };
 
   async function loadRole(userEmail) {
-  const safeEmail = (userEmail || "").trim().toLowerCase();
+    const { data, error } = await supabase
+      .from("users")
+      .select("role, email")
+      .eq("email", userEmail)
+      .maybeSingle();
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("role, email")
-    .ilike("email", safeEmail)
-    .maybeSingle();
-
-  if (error) {
-    console.error("ROLE LOAD ERROR:", error);
-
-    if (safeEmail === "inelsan@taskopru.com") {
-      setUserRole("chief");
-      return;
-    }
-
-    if (safeEmail === "inelsanofis@taskopru.com") {
+    if (error) {
+      console.error("ROLE LOAD ERROR:", error);
       setUserRole("office");
       return;
     }
 
-    setUserRole("chief");
-    return;
+    const role = data?.role === "chief" ? "chief" : "office";
+    setUserRole(role);
   }
-
-  if (data?.role === "chief") {
-    setUserRole("chief");
-    return;
-  }
-
-  if (data?.role === "office") {
-    setUserRole("office");
-    return;
-  }
-
-  if (safeEmail === "inelsan@taskopru.com") {
-    setUserRole("chief");
-    return;
-  }
-
-  if (safeEmail === "inelsanofis@taskopru.com") {
-    setUserRole("office");
-    return;
-  }
-
-  setUserRole("chief");
-}
 
   async function loadData() {
     const { data: p1 } = await supabase
@@ -145,58 +113,15 @@ export default function Home() {
   }
 
   useEffect(() => {
-  let isMounted = true;
+    supabase.auth.getSession().then(async ({ data }) => {
+      const currentSession = data.session;
+      setSession(currentSession || null);
 
-  async function initAuth() {
-    const { data, error } = await supabase.auth.getSession();
-
-    if (error) {
-      console.error("GET SESSION ERROR:", error);
-      if (isMounted) {
-        setSession(null);
-        setUserRole("chief");
+      if (currentSession?.user?.email) {
+        await loadRole(currentSession.user.email);
+        await loadData();
       }
-      return;
-    }
-
-    const currentSession = data?.session || null;
-
-    if (!isMounted) return;
-
-    setSession(currentSession);
-
-    if (currentSession?.user?.email) {
-      await loadRole(currentSession.user.email);
-      await loadData();
-    } else {
-      setUserRole("chief");
-    }
-  }
-
-  initAuth();
-
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-    if (!isMounted) return;
-
-    setSession(newSession || null);
-
-    if (newSession?.user?.email) {
-      await loadRole(newSession.user.email);
-      await loadData();
-    } else {
-      setUserRole("chief");
-      setSelectedImage("");
-      setEditingLogId(null);
-    }
-  });
-
-  return () => {
-    isMounted = false;
-    subscription.unsubscribe();
-  };
-}, []);
+    });
 
     const {
       data: { subscription },
@@ -238,26 +163,10 @@ export default function Home() {
   }
 
   async function signOut() {
-  try {
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      console.error("SIGN OUT ERROR:", error);
-      alert("Çıkış hatası: " + error.message);
-      return;
-    }
-
+    await supabase.auth.signOut();
     setSession(null);
-    setUserRole("chief");
-    setSelectedImage("");
-    setEditingLogId(null);
-
-    window.location.href = window.location.pathname;
-  } catch (err) {
-    console.error("SIGN OUT CATCH ERROR:", err);
-    alert("Çıkış yapılırken beklenmeyen hata oluştu");
+    setUserRole("office");
   }
-}
 
   const canEdit = userRole === "chief";
 
@@ -1145,17 +1054,9 @@ export default function Home() {
             onChange={(e) => setPassword(e.target.value)}
           />
 
-          <button
-              type="button"
-                style={styles.button}
-           onClick={(e) => {
-             e.preventDefault();
-             e.stopPropagation();
-             signOut();
-  }}
->
-  Çıkış Yap
-  </button>
+          <button style={{ ...styles.button, width: "100%" }} onClick={signIn}>
+            Giriş Yap
+          </button>
 
           {loginError ? (
             <div style={{ color: "red", marginTop: 12 }}>{loginError}</div>
